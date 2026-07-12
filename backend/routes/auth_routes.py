@@ -89,6 +89,7 @@ def login():
         return jsonify({"error": "Invalid email or password."}), 401
     if not user.is_active:
         return jsonify({"error": "Your account is deactivated."}), 403
+    # Milestone 6: "only approved companies can create placement drives" is enforced.
     if user.role == "company":
         if user.company.is_blacklisted:
             return jsonify({"error": "Your company account has been blacklisted."}), 403

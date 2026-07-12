@@ -145,7 +145,7 @@ def reject_drive(did):
     cache_clear_prefix("drives:")
     return jsonify({"message": f'Drive "{d.title}" rejected.'})
 
-
+# Milestone 6: admin has unrestricted visibility
 @bp.get("/applications")
 @role_required("admin")
 def applications():

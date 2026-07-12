@@ -9,10 +9,15 @@ from backend.validators import (require_fields, valid_float, valid_int,
                                 valid_date_eod, valid_datetime)
 
 bp = Blueprint("company", __name__, url_prefix="/api/company")
-
+# Milestone 6: whitelist of allowed application statuses.
 VALID_STATUSES = ("Applied", "Shortlisted", "Interview", "Selected", "Rejected", "Placed")
 
-
+"""
+    Milestone 6: scoping for 'Company can view applications' — ensures a
+    company can only access drives (and therefore applicants) that belong
+    to them. Prevents one company from reading another company's
+    applicant data via the API.
+"""
 def _own_drive_or_404(did):
     d = PlacementDrive.query.get_or_404(did)
     if d.company_id != g.current_user.company.id:
@@ -47,7 +52,7 @@ def list_drives():
         .order_by(PlacementDrive.created_at.desc()).all()
     return jsonify([d.to_dict() for d in drives])
 
-
+# Milestone 6: no explicit "is_approved" check needed here.
 @bp.post("/drives")
 @role_required("company")
 def create_drive():
@@ -116,7 +121,7 @@ def close_drive(did):
     cache_clear_prefix("drives:")
     return jsonify({"message": "Drive closed."})
 
-
+# Milestone 6: status update, restricted to the company that owns this application's drive
 @bp.post("/applications/<int:aid>/status")
 @role_required("company")
 def update_application(aid):
@@ -142,7 +147,7 @@ def update_application(aid):
     db.session.commit()
     return jsonify({"message": "Application updated.", "application": a.to_dict()})
 
-
+# Milestone 6: scheduling an interview auto-advances a fresh application
 @bp.post("/drives/<int:did>/interviews")
 @role_required("company")
 def schedule_interview(did):

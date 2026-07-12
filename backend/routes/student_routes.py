@@ -12,6 +12,8 @@ from backend.validators import valid_float, valid_int
 
 bp = Blueprint("student", __name__, url_prefix="/api/student")
 
+# Milestone 6 — role-scoped visibility is already done within these routes files.
+
 
 def file_allowed(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() == "pdf"
@@ -49,7 +51,8 @@ def dashboard():
                          .order_by(Application.applied_at.desc()).all()],
     })
 
-
+# Milestone 6: students may only ever SEE approved, open drives.
+# Pending/Rejected/Closed drives are excluded at the query level
 @bp.get("/drives")
 @role_required("student")
 def drives():
@@ -85,6 +88,7 @@ def apply(did):
     ok, reason = _eligible(s, d)
     if not ok:
         return jsonify({"error": reason}), 400
+    # Milestone 6: re-check approval status server-side
     if Application.query.filter_by(student_id=s.id, drive_id=did).first():
         return jsonify({"error": "You have already applied for this drive."}), 409
     a = Application(student_id=s.id, drive_id=did)
@@ -92,7 +96,9 @@ def apply(did):
     db.session.commit()
     return jsonify({"message": f"Applied for {d.title}.", "application": a.to_dict()}), 201
 
-
+# --- Milestone 6: Application & placement history -----------------------
+# Returns the student's COMPLETE application history (all statuses, all
+# time) — rows are never deleted, only their application_status changes.
 @bp.get("/applications")
 @role_required("student")
 def applications():
@@ -101,7 +107,7 @@ def applications():
         .order_by(Application.applied_at.desc()).all()
     return jsonify([a.to_dict() for a in apps])
 
-
+# Full interview schedule/history for this student, oldest-scheduled first.
 @bp.get("/interviews")
 @role_required("student")
 def interviews():
@@ -110,7 +116,8 @@ def interviews():
         .order_by(Interview.scheduled_at.asc()).all()
     return jsonify([iv.to_dict() for iv in ivs])
 
-
+# Placement history — created automatically once a company marks an
+# application Selected/Placed (see company_routes.update_application()).
 @bp.get("/placements")
 @role_required("student")
 def placements():

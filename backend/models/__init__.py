@@ -156,13 +156,16 @@ class Application(db.Model):
     drive_id = db.Column(db.Integer, db.ForeignKey("placement_drives.id"), nullable=False)
 
     # Applied / Shortlisted / Interview / Selected / Rejected / Placed
+    # Milestone 6: status lifecycle — Applied / Shortlisted / Interview / Selected / Rejected / Placed.
+    # This project uses "Selected" instead of "Offer"
     application_status = db.Column(db.String(20), default="Applied")
     remark = db.Column(db.Text)
     applied_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     placement = db.relationship("Placement", backref="application", uselist=False,
                                 cascade="all, delete-orphan")
-
+    
+    # Milestone 6: DB-level guarantee against duplicate applications
     __table_args__ = (
         db.UniqueConstraint("student_id", "drive_id", name="unique_student_drive"),
     )
