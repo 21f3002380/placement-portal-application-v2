@@ -48,6 +48,8 @@ def create_app(config_object=Config):
 def seed_admin(app):
     from backend.models import User
     with app.app_context():
+        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         db.create_all()
         if not User.query.filter_by(role="admin").first():
             admin = User(

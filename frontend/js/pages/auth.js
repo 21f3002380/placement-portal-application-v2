@@ -42,7 +42,6 @@ Pages.Login = {
           {{ busy ? 'Signing in…' : 'Sign in' }}
         </button>
         <p class="small text-center mt-3 mb-0">New here? <router-link to="/register">Create an account</router-link></p>
-        <p class="small text-center text-muted mt-2">Admin demo: admin@portal.com / Admin@123</p>
       </div>
     </div>
   </div>`

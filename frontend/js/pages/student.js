@@ -20,7 +20,9 @@ Pages.StudentDashboard = {
         const s = await API.get('/api/student/export/'+taskId+'/status');
         if (s.state === 'SUCCESS' && s.result && s.result.filename) {
           Store.toast('Export ready — downloading.');
-          window.open('/api/student/export/download/'+s.result.filename, '_blank');
+          try {
+            await API.download('/api/student/export/download/'+s.result.filename, s.result.filename);
+          } catch (e) { Store.toast(e.message, 'err'); }
           exporting.value = false;
         } else if (s.state === 'FAILURE') {
           Store.toast('Export failed.','err'); exporting.value = false;

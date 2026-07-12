@@ -93,6 +93,10 @@ Pages.CompanyViewDrive = {
     const data = ref(null);
     const iv = ref({});          // interview form per student
     async function load() { data.value = await API.get('/api/company/drives/'+id); }
+    async function viewResume(studentId) {
+      try { await API.openInNewTab('/api/student/resume/'+studentId); }
+      catch(e){ Store.toast(e.message, 'err'); }
+    }
     async function setStatus(a) {
       try { const r = await API.post('/api/company/applications/'+a.id+'/status', { status: a.application_status, remark: a.remark||'' });
         Store.toast(r.message); load(); } catch(e){ Store.toast(e.message,'err'); }
@@ -107,7 +111,7 @@ Pages.CompanyViewDrive = {
       } catch(e){ Store.toast(e.message,'err'); }
     }
     onMounted(load);
-    return { data, iv, setStatus, schedule, id };
+    return { data, iv, setStatus, schedule, id, viewResume};
   },
   template: `
   <div class="container py-4" v-if="data">
@@ -129,7 +133,7 @@ Pages.CompanyViewDrive = {
                 <option>Applied</option><option>Shortlisted</option><option>Interview</option><option>Selected</option><option>Rejected</option><option>Placed</option>
               </select>
             </td>
-            <td><a class="btn btn-sm btn-outline-secondary" :href="'/api/student/resume/'+a.student_id" target="_blank">View</a></td>
+            <td><a class="btn btn-sm btn-outline-secondary"  @click="viewResume(a.student_id)">View</a></td>
             <td><input v-model="a.remark" class="form-control form-control-sm" /></td>
             <td class="text-end"><button class="btn btn-sm btn-ink" @click="setStatus(a)">Save</button></td>
           </tr>

@@ -121,8 +121,12 @@ Pages.AdminStudents = {
     const list = ref([]); const q = ref('');
     async function load() { list.value = await API.get('/api/admin/students?q=' + encodeURIComponent(q.value)); }
     async function act(url) { try { const r = await API.post(url); Store.toast(r.message); load(); } catch(e){ Store.toast(e.message,'err'); } }
+    async function viewResume(studentId) {
+      try { await API.openInNewTab('/api/student/resume/'+studentId); }
+      catch(e){ Store.toast(e.message, 'err'); }
+    }
     onMounted(load);
-    return { list, q, load, act };
+    return { list, q, load, act, viewResume};
   },
   template: `
   <div class="container py-4">
@@ -141,7 +145,7 @@ Pages.AdminStudents = {
             <td>{{ s.name }}</td><td>{{ s.roll_number }}</td><td>{{ s.department || '—' }}</td><td>{{ s.cgpa ?? '—' }}</td>
             <td><Pill v-if="s.is_blacklisted" value="Blacklisted" /><Pill v-else value="Active" /></td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-secondary me-1" :href="'/api/student/resume/'+s.id" target="_blank" v-if="s.resume_filename">Resume</a>
+              <a class="btn btn-sm btn-outline-secondary me-1" v-if="s.resume_filename" @click="viewResume(s.id)">Resume</a>
               <button v-if="!s.is_blacklisted" class="btn btn-sm btn-outline-danger" @click="act('/api/admin/students/'+s.id+'/blacklist')">Blacklist</button>
               <button v-else class="btn btn-sm btn-outline-secondary" @click="act('/api/admin/students/'+s.id+'/unblacklist')">Restore</button>
             </td>

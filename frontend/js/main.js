@@ -30,6 +30,7 @@ const router = createRouter({ history: createWebHashHistory(), routes });
 // Route guards: role gating + redirect authenticated users away from guest pages
 router.beforeEach((to) => {
   const user = Store.state.user;
+  if (to.path === '/' && user) return '/' + user.role;
   if (to.meta.role) {
     if (!user) return '/login';
     if (user.role !== to.meta.role) return '/' + user.role;

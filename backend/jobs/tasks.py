@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 
 import requests
-
+from werkzeug.utils import secure_filename
 from backend.extensions import db
 from backend.config import Config
 from backend.models import Student, Company, Application, PlacementDrive, Interview
@@ -99,7 +99,10 @@ def export_applications_csv(self, student_id):
         return {"error": "student not found"}
 
     os.makedirs(Config.EXPORT_FOLDER, exist_ok=True)
-    filename = f"applications_student_{student_id}_{self.request.id}.csv"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_id = str(self.request.id)[:8]
+    safe_roll = secure_filename(student.roll_number or f"student{student_id}")
+    filename = f"applications_{safe_roll}_{stamp}_{short_id}.csv"
     path = os.path.join(Config.EXPORT_FOLDER, filename)
 
     apps = Application.query.filter_by(student_id=student_id).all()
