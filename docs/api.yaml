@@ -1,0 +1,352 @@
+openapi: 3.0.3
+info:
+  title: Placement Portal Application V2 — API
+  description: >
+    JSON API for the Placement Portal (MAD-II). JWT bearer-token auth on all
+    endpoints except /api/auth/register, /api/auth/login, and /api/public/*.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:5000
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Admin
+  - name: Company
+  - name: Student
+  - name: Public
+
+paths:
+  # ---------------- Auth ----------------
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a student or company account
+      security: []
+      responses:
+        "201": { description: Registered successfully }
+        "400": { description: Validation error }
+        "409": { description: Email/roll number already exists }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and receive a JWT
+      security: []
+      responses:
+        "200": { description: "Returns { token, user, profile }" }
+        "401": { description: Invalid credentials }
+        "403": { description: Account inactive, unapproved, or blacklisted }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current authenticated user and role profile
+      responses:
+        "200": { description: "Returns { user, profile }" }
+
+  # ---------------- Admin ----------------
+  /api/admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Counts, pending companies/drives, recent applications
+      responses: { "200": { description: OK } }
+
+  /api/admin/companies:
+    get:
+      tags: [Admin]
+      summary: List/search companies (cached, keyed by query)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /api/admin/companies/{cid}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve a company (also restores login access)
+      parameters: [{ name: cid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/companies/{cid}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject a company
+      parameters: [{ name: cid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/companies/{cid}/blacklist:
+    post:
+      tags: [Admin]
+      summary: Blacklist a company (closes its open drives)
+      parameters: [{ name: cid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/companies/{cid}/unblacklist:
+    post:
+      tags: [Admin]
+      summary: Restore a blacklisted company
+      parameters: [{ name: cid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/students:
+    get:
+      tags: [Admin]
+      summary: List/search students by name, roll number, or email (cached)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /api/admin/students/{sid}/blacklist:
+    post:
+      tags: [Admin]
+      summary: Blacklist a student
+      parameters: [{ name: sid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/students/{sid}/unblacklist:
+    post:
+      tags: [Admin]
+      summary: Restore a blacklisted student
+      parameters: [{ name: sid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/drives:
+    get:
+      tags: [Admin]
+      summary: List placement drives, optionally filtered by approval status
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [all, Pending, Approved, Rejected] } }
+      responses: { "200": { description: OK } }
+
+  /api/admin/drives/{did}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve a placement drive
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/drives/{did}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject a placement drive
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/admin/applications:
+    get:
+      tags: [Admin]
+      summary: List every application in the system (unrestricted admin view)
+      responses: { "200": { description: OK } }
+
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Placement statistics — funnel, monthly trend, skills demand, per-company (cached)
+      responses: { "200": { description: OK } }
+
+  # ---------------- Company ----------------
+  /api/company/dashboard:
+    get:
+      tags: [Company]
+      summary: Company profile, its drives, application counts, status breakdown
+      responses: { "200": { description: OK } }
+
+  /api/company/drives:
+    get:
+      tags: [Company]
+      summary: List this company's own drives
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Company]
+      summary: Create a new placement drive (goes to admin for approval)
+      responses:
+        "201": { description: Created }
+        "400": { description: Validation error }
+
+  /api/company/drives/{did}:
+    get:
+      tags: [Company]
+      summary: View a drive with its applications and interviews
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: OK }
+        "403": { description: Forbidden — not this company's drive }
+
+  /api/company/drives/{did}/close:
+    post:
+      tags: [Company]
+      summary: Close a placement drive
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /api/company/applications/{aid}/status:
+    post:
+      tags: [Company]
+      summary: >
+        Update an application's status. Selected/Placed auto-creates a
+        Placement and queues async offer-letter generation + email.
+      parameters: [{ name: aid, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: OK }
+        "400": { description: Invalid status }
+        "403": { description: Forbidden }
+
+  /api/company/drives/{did}/interviews:
+    post:
+      tags: [Company]
+      summary: Schedule an interview for an applicant (auto-advances status to Interview)
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "201": { description: Created }
+        "400": { description: Student has not applied to this drive }
+
+  /api/company/interviews/{iid}/feedback:
+    post:
+      tags: [Company]
+      summary: Save interview feedback
+      parameters: [{ name: iid, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  # ---------------- Student ----------------
+  /api/student/dashboard:
+    get:
+      tags: [Student]
+      summary: Student profile, approved companies, applications, status breakdown
+      responses: { "200": { description: OK } }
+
+  /api/student/drives:
+    get:
+      tags: [Student]
+      summary: Browse/search approved+open drives with per-student eligibility flags (cached per student)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /api/student/drives/{did}/apply:
+    post:
+      tags: [Student]
+      summary: Apply to a drive (duplicate- and eligibility-checked)
+      parameters: [{ name: did, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "201": { description: Applied }
+        "400": { description: Not eligible / drive not open }
+        "409": { description: Already applied }
+
+  /api/student/applications:
+    get:
+      tags: [Student]
+      summary: Full application history for the current student
+      responses: { "200": { description: OK } }
+
+  /api/student/interviews:
+    get:
+      tags: [Student]
+      summary: Scheduled interviews for the current student
+      responses: { "200": { description: OK } }
+
+  /api/student/placements:
+    get:
+      tags: [Student]
+      summary: Placement/offer records for the current student
+      responses: { "200": { description: OK } }
+
+  /api/student/profile:
+    put:
+      tags: [Student]
+      summary: Update student profile fields
+      responses:
+        "200": { description: OK }
+        "400": { description: Validation error }
+
+  /api/student/resume:
+    post:
+      tags: [Student]
+      summary: Upload resume (multipart/form-data, PDF only)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resume: { type: string, format: binary }
+      responses:
+        "200": { description: Uploaded }
+        "400": { description: Not a PDF }
+
+  /api/student/resume/{student_id}:
+    get:
+      tags: [Student]
+      summary: >
+        Download a resume. Allowed for the owning student, admin, or a
+        company the student has applied to (ownership-checked).
+      parameters: [{ name: student_id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: File stream }
+        "403": { description: Forbidden }
+        "404": { description: No resume on file }
+
+  /api/student/export:
+    post:
+      tags: [Student]
+      summary: Trigger an async CSV export of this student's application history (Celery)
+      responses:
+        "202": { description: "Export queued — returns { task_id }" }
+        "503": { description: Celery/Redis unreachable }
+
+  /api/student/export/{task_id}/status:
+    get:
+      tags: [Student]
+      summary: Poll the status of a queued export task
+      parameters: [{ name: task_id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Returns { state, result }" } }
+
+  /api/student/export/download/{filename}:
+    get:
+      tags: [Student]
+      summary: Download a completed CSV export
+      parameters: [{ name: filename, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: File stream } }
+
+  /api/student/placements/{placement_id}/offer:
+    get:
+      tags: [Student]
+      summary: >
+        Download the offer letter / placement confirmation. Allowed for the
+        owning student, admin, or the placing company.
+      parameters: [{ name: placement_id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: File stream }
+        "403": { description: Forbidden }
+        "404": { description: Offer letter not yet generated }
+
+  /api/student/companies:
+    get:
+      tags: [Student]
+      summary: Search approved companies by name, industry, or location (cached)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  # ---------------- Public ----------------
+  /api/public/drives:
+    get:
+      tags: [Public]
+      summary: Pre-login listing of approved & open drives (cached 60s)
+      security: []
+      responses: { "200": { description: OK } }
+
+  /api/public/stats:
+    get:
+      tags: [Public]
+      summary: Pre-login aggregated landing-page statistics (cached 120s)
+      security: []
+      responses: { "200": { description: OK } }
