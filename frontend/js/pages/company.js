@@ -3,9 +3,32 @@ window.Pages = window.Pages || {};
 Pages.CompanyDashboard = {
   components: { Stat: Components.Stat, Pill: Components.Pill },
   setup() {
-    const { ref, onMounted } = Vue;
+    const { ref, onMounted, nextTick } = Vue;
     const d = ref(null);
-    async function load() { d.value = await API.get('/api/company/dashboard'); }
+    let chart = null;
+    const STATUS_COLORS = {
+      Applied: '#d7e3f2', Shortlisted: '#fbeecd', Interview: '#d5eef2',
+      Selected: '#d9ecdf', Placed: '#2f7d55', Rejected: '#f4d9d6',
+    };
+    async function load() {
+      d.value = await API.get('/api/company/dashboard');
+      await nextTick();
+      const ctx = document.getElementById('companyFunnelChart');
+      if (ctx && d.value.status_distribution) {
+        if (chart) chart.destroy();
+        const labels = Object.keys(d.value.status_distribution);
+        if (labels.length) {
+          chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels, datasets: [{
+              data: labels.map(l => d.value.status_distribution[l]),
+              backgroundColor: labels.map(l => STATUS_COLORS[l] || '#c9c2b4'),
+            }] },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+          });
+        }
+      }
+    }
     async function close(id) {
       if (!confirm('Close this drive?')) return;
       try { const r = await API.post('/api/company/drives/'+id+'/close'); Store.toast(r.message); load(); }
@@ -26,7 +49,38 @@ Pages.CompanyDashboard = {
       <div class="col-4"><Stat :n="d.total_applications" label="Applications" /></div>
       <div class="col-4"><Stat :n="d.shortlisted" label="Shortlisted" /></div>
     </div>
-    <div class="card-flat">
+
+    <div class="row g-3 mb-3" v-if="d.total_applications">
+      <div class="col-md-4">
+        <div class="card-flat h-100">
+          <div class="card-head">Application funnel</div>
+          <div class="card-body"><canvas id="companyFunnelChart" height="180"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-8">
+        <div class="card-flat h-100">
+          <div class="card-head">Your drives</div>
+          <table class="table table-flat mb-0">
+            <thead><tr><th>Drive</th><th>Role</th><th>Approval</th><th>Status</th><th>Applicants</th><th class="text-end">Action</th></tr></thead>
+            <tbody>
+              <tr v-for="dr in d.drives" :key="dr.id">
+                <td>{{ dr.title }}</td><td>{{ dr.job_role }}</td>
+                <td><Pill :value="dr.approval_status" /></td><td><Pill :value="dr.drive_status" /></td>
+                <td>{{ dr.applicant_count }}</td>
+                <td class="text-end">
+                  <router-link :to="'/company/drives/'+dr.id" class="btn btn-sm btn-ink me-1">Manage</router-link>
+                  <button v-if="dr.drive_status==='Open' && dr.approval_status==='Approved'"
+                    class="btn btn-sm btn-outline-secondary" @click="close(dr.id)">Close</button>
+                </td>
+              </tr>
+              <tr v-if="!d.drives.length"><td colspan="6" class="empty">No drives yet — create your first one.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-flat" v-else>
       <div class="card-head">Your drives</div>
       <table class="table table-flat mb-0">
         <thead><tr><th>Drive</th><th>Role</th><th>Approval</th><th>Status</th><th>Applicants</th><th class="text-end">Action</th></tr></thead>
@@ -55,12 +109,31 @@ Pages.CompanyCreateDrive = {
     const f = reactive({ title:'', job_role:'', description:'', skills_required:'',
       package:'', eligibility_cgpa:'', eligibility_branch:'', eligibility_year:'',
       eligibility_criteria:'', application_deadline:'', drive_date:'' });
+    const errors = reactive({});
+
+    function validate() {
+      const V = Validate;
+      const spec = {
+        title: [v => V.required(v, 'Drive name')],
+        job_role: [v => V.required(v, 'Job title')],
+        package: [v => V.numberInRange(v, 0, null, 'Package')],
+        eligibility_cgpa: [v => V.numberInRange(v, 0, 10, 'Min CGPA')],
+        eligibility_year: [v => V.numberInRange(v, 1, 6, 'Min year')],
+        application_deadline: [v => V.dateNotPast(v, 'Application deadline')],
+      };
+      const { valid, errors: e } = V.run(f, spec);
+      Object.keys(errors).forEach(k => delete errors[k]);
+      Object.assign(errors, e);
+      return valid;
+    }
+
     async function submit() {
+      if (!validate()) { Store.toast('Please fix the highlighted fields.', 'err'); return; }
       busy.value = true;
       try { const r = await API.post('/api/company/drives', f); Store.toast(r.message); window.location.hash = '#/company'; }
       catch(e){ Store.toast(e.message,'err'); } finally { busy.value = false; }
     }
-    return { f, busy, submit };
+    return { f, busy, submit, errors };
   },
   template: `
   <div class="container py-4" style="max-width:640px">
@@ -68,15 +141,33 @@ Pages.CompanyCreateDrive = {
     <h2 class="mb-4">Create a placement drive</h2>
     <div class="card-flat"><div class="card-body">
       <div class="row g-2">
-        <div class="col-6"><label class="form-label small">Drive name</label><input v-model="f.title" class="form-control form-control-sm" /></div>
-        <div class="col-6"><label class="form-label small">Job title</label><input v-model="f.job_role" class="form-control form-control-sm" /></div>
+        <div class="col-6"><label class="form-label small">Drive name</label>
+          <input v-model="f.title" class="form-control form-control-sm" :class="{'is-invalid': errors.title}" />
+          <div class="invalid-feedback" v-if="errors.title">{{ errors.title }}</div>
+        </div>
+        <div class="col-6"><label class="form-label small">Job title</label>
+          <input v-model="f.job_role" class="form-control form-control-sm" :class="{'is-invalid': errors.job_role}" />
+          <div class="invalid-feedback" v-if="errors.job_role">{{ errors.job_role }}</div>
+        </div>
         <div class="col-12"><label class="form-label small">Job description</label><textarea v-model="f.description" rows="3" class="form-control form-control-sm"></textarea></div>
         <div class="col-12"><label class="form-label small">Required skills</label><input v-model="f.skills_required" class="form-control form-control-sm" placeholder="Python, SQL" /></div>
-        <div class="col-4"><label class="form-label small">Package (LPA)</label><input v-model="f.package" type="number" step="0.1" min="0" class="form-control form-control-sm" /></div>
-        <div class="col-4"><label class="form-label small">Min CGPA</label><input v-model="f.eligibility_cgpa" type="number" step="0.1" min="0" max="10" class="form-control form-control-sm" /></div>
-        <div class="col-4"><label class="form-label small">Min year</label><input v-model="f.eligibility_year" type="number" min="1" max="6" class="form-control form-control-sm" /></div>
+        <div class="col-4"><label class="form-label small">Package (LPA)</label>
+          <input v-model="f.package" type="number" step="0.1" min="0" class="form-control form-control-sm" :class="{'is-invalid': errors.package}" />
+          <div class="invalid-feedback" v-if="errors.package">{{ errors.package }}</div>
+        </div>
+        <div class="col-4"><label class="form-label small">Min CGPA</label>
+          <input v-model="f.eligibility_cgpa" type="number" step="0.1" min="0" max="10" class="form-control form-control-sm" :class="{'is-invalid': errors.eligibility_cgpa}" />
+          <div class="invalid-feedback" v-if="errors.eligibility_cgpa">{{ errors.eligibility_cgpa }}</div>
+        </div>
+        <div class="col-4"><label class="form-label small">Min year</label>
+          <input v-model="f.eligibility_year" type="number" min="1" max="6" class="form-control form-control-sm" :class="{'is-invalid': errors.eligibility_year}" />
+          <div class="invalid-feedback" v-if="errors.eligibility_year">{{ errors.eligibility_year }}</div>
+        </div>
         <div class="col-12"><label class="form-label small">Eligible branches <span class="text-muted">(comma-separated, blank = all)</span></label><input v-model="f.eligibility_branch" class="form-control form-control-sm" placeholder="CSE, ECE" /></div>
-        <div class="col-6"><label class="form-label small">Application deadline</label><input v-model="f.application_deadline" type="date" class="form-control form-control-sm" /></div>
+        <div class="col-6"><label class="form-label small">Application deadline</label>
+          <input v-model="f.application_deadline" type="date" class="form-control form-control-sm" :class="{'is-invalid': errors.application_deadline}" />
+          <div class="invalid-feedback" v-if="errors.application_deadline">{{ errors.application_deadline }}</div>
+        </div>
         <div class="col-6"><label class="form-label small">Drive date</label><input v-model="f.drive_date" type="date" class="form-control form-control-sm" /></div>
       </div>
       <button class="btn btn-amber mt-4" :disabled="busy" @click="submit">{{ busy?'Saving…':'Submit for approval' }}</button>

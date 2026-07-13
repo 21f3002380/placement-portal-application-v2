@@ -16,11 +16,13 @@ def make_celery(flask_app):
                 "task": "backend.jobs.tasks.send_interview_reminders",
                 # every day at 08:00 IST
                 "schedule": crontab(hour=8, minute=0),
+                #"schedule": crontab(minute="*"),
             },
             "monthly-admin-report": {
                 "task": "backend.jobs.tasks.generate_monthly_report",
                 # 1st of every month at 06:00 IST
                 "schedule": crontab(day_of_month=1, hour=6, minute=0),
+                #"schedule": crontab(minute="*/2"),
             },
         },
     )

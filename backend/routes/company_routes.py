@@ -1,5 +1,6 @@
 import os
 from flask import Blueprint, request, jsonify, g, send_from_directory
+from sqlalchemy import func
 from backend.extensions import db
 from backend.config import Config
 from backend.models import PlacementDrive, Application, Interview, Placement
@@ -35,12 +36,18 @@ def dashboard():
     shortlisted = Application.query.join(PlacementDrive)\
         .filter(PlacementDrive.company_id == c.id,
                 Application.application_status == "Shortlisted").count()
+    status_rows = db.session.query(
+        Application.application_status, func.count(Application.id)
+    ).join(PlacementDrive).filter(PlacementDrive.company_id == c.id)\
+     .group_by(Application.application_status).all()
+    status_distribution = {status: count for status, count in status_rows}
     return jsonify({
         "company": c.to_dict(),
         "drives": [d.to_dict() for d in drives],
         "total_drives": len(drives),
         "total_applications": total_apps,
         "shortlisted": shortlisted,
+        "status_distribution": status_distribution,
     })
 
 
@@ -121,7 +128,7 @@ def close_drive(did):
     cache_clear_prefix("drives:")
     return jsonify({"message": "Drive closed."})
 
-# Milestone 6: status update, restricted to the company that owns this application's drive
+# Milestone 6: status update
 @bp.post("/applications/<int:aid>/status")
 @role_required("company")
 def update_application(aid):
@@ -135,16 +142,26 @@ def update_application(aid):
     a.application_status = new_status
     a.remark = (data.get("remark") or "").strip()
 
-    # If selected/placed, create a Placement record (idempotent)
+    new_placement_id = None
     if new_status in ("Selected", "Placed") and not a.placement:
-        db.session.add(Placement(
+        placement = Placement(
             application_id=a.id,
             student_id=a.student_id,
             company_id=a.drive.company_id,
             position=a.drive.job_role,
             salary=a.drive.package,
-        ))
+        )
+        db.session.add(placement)
+        db.session.flush()
+        new_placement_id=placement.id
     db.session.commit()
+    if new_placement_id:
+        try:
+            from backend.jobs.tasks import generate_offer_letter
+            generate_offer_letter.delay(new_placement_id)
+        except Exception as e:
+            print(f"[offer-letter] could not queue generation: {e}")
+
     return jsonify({"message": "Application updated.", "application": a.to_dict()})
 
 # Milestone 6: scheduling an interview auto-advances a fresh application
@@ -171,7 +188,7 @@ def schedule_interview(did):
         mode=(data.get("mode") or "In-person").strip(),
         location=(data.get("location") or "").strip(),
     )
-    if app.application_status == "Applied":
+    if app.application_status in ("Applied","Shortlisted"):
         app.application_status = "Interview"
     db.session.add(iv)
     db.session.commit()

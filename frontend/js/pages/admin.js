@@ -139,10 +139,10 @@ Pages.AdminStudents = {
     </div>
     <div class="card-flat">
       <table class="table table-flat mb-0">
-        <thead><tr><th>Name</th><th>Roll</th><th>Dept</th><th>CGPA</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Roll</th><th>Dept</th><th>CGPA</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
         <tbody>
           <tr v-for="s in list" :key="s.id">
-            <td>{{ s.name }}</td><td>{{ s.roll_number }}</td><td>{{ s.department || '—' }}</td><td>{{ s.cgpa ?? '—' }}</td>
+            <td>{{ s.name }}</td><td class="small">{{ s.email }}</td><td>{{ s.roll_number }}</td><td>{{ s.department || '—' }}</td><td>{{ s.cgpa ?? '—' }}</td>
             <td><Pill v-if="s.is_blacklisted" value="Blacklisted" /><Pill v-else value="Active" /></td>
             <td class="text-end">
               <a class="btn btn-sm btn-outline-secondary me-1" v-if="s.resume_filename" @click="viewResume(s.id)">Resume</a>
@@ -150,7 +150,7 @@ Pages.AdminStudents = {
               <button v-else class="btn btn-sm btn-outline-secondary" @click="act('/api/admin/students/'+s.id+'/unblacklist')">Restore</button>
             </td>
           </tr>
-          <tr v-if="!list.length"><td colspan="6" class="empty">No students</td></tr>
+          <tr v-if="!list.length"><td colspan="7" class="empty">No students</td></tr>
         </tbody>
       </table>
     </div>
@@ -173,7 +173,7 @@ Pages.AdminDrives = {
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2 class="mb-0">Placement drives</h2>
       <div class="btn-group btn-group-sm">
-        <button v-for="s in ['all','Pending','Approved','Rejected']" :key="s"
+        <button v-for="s in ['All','Pending','Approved','Rejected']" :key="s"
           class="btn" :class="filter===s?'btn-ink':'btn-outline-secondary'" @click="setF(s)">{{ s }}</button>
       </div>
     </div>
@@ -200,14 +200,22 @@ Pages.AdminReports = {
   setup() {
     const { ref, onMounted, nextTick } = Vue;
     const s = ref(null);
-    let chart = null;
+    const charts = {};
+    function destroyAll() { Object.values(charts).forEach(c => c && c.destroy()); }
+
+    const STATUS_COLORS = {
+      Applied: '#d7e3f2', Shortlisted: '#fbeecd', Interview: '#d5eef2',
+      Selected: '#d9ecdf', Placed: '#2f7d55', Rejected: '#f4d9d6',
+    };
+
     async function load() {
       s.value = await API.get('/api/admin/stats');
       await nextTick();
-      const ctx = document.getElementById('companyChart');
-      if (ctx) {
-        if (chart) chart.destroy();
-        chart = new Chart(ctx, {
+      destroyAll();
+
+      const companyCtx = document.getElementById('companyChart');
+      if (companyCtx) {
+        charts.company = new Chart(companyCtx, {
           type: 'bar',
           data: {
             labels: s.value.company_stats.map(c => c.company),
@@ -217,6 +225,52 @@ Pages.AdminReports = {
             ]
           },
           options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+      }
+
+      const funnelCtx = document.getElementById('funnelChart');
+      if (funnelCtx) {
+        const labels = Object.keys(s.value.status_distribution);
+        charts.funnel = new Chart(funnelCtx, {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{
+              data: labels.map(l => s.value.status_distribution[l]),
+              backgroundColor: labels.map(l => STATUS_COLORS[l] || '#c9c2b4'),
+            }]
+          },
+          options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+      }
+
+      const trendCtx = document.getElementById('trendChart');
+      if (trendCtx) {
+        charts.trend = new Chart(trendCtx, {
+          type: 'line',
+          data: {
+            labels: s.value.monthly_placements.map(m => m.month),
+            datasets: [{
+              label: 'Placements', data: s.value.monthly_placements.map(m => m.count),
+              borderColor: '#d98a2b', backgroundColor: 'rgba(217,138,43,0.15)',
+              fill: true, tension: 0.3,
+            }]
+          },
+          options: { responsive: true, plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+        });
+      }
+
+      const skillsCtx = document.getElementById('skillsChart');
+      if (skillsCtx) {
+        charts.skills = new Chart(skillsCtx, {
+          type: 'bar',
+          data: {
+            labels: s.value.skills_demand.map(d => d.skill),
+            datasets: [{ label: 'Drives requiring this skill', data: s.value.skills_demand.map(d => d.count), backgroundColor: '#33475f' }]
+          },
+          options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
         });
       }
     }
@@ -233,11 +287,40 @@ Pages.AdminReports = {
       <div class="col-6 col-md-3"><div class="stat"><div class="n">{{ s.drives_open }}</div><div class="l">Open drives</div></div></div>
       <div class="col-6 col-md-3"><div class="stat"><div class="n">{{ s.drives_closed }}</div><div class="l">Closed drives</div></div></div>
     </div>
-    <div class="card-flat">
-      <div class="card-head">Applications vs selections by company</div>
-      <div class="card-body">
-        <canvas id="companyChart" height="110"></canvas>
-        <p v-if="!s.company_stats.length" class="empty mb-0">No company data yet</p>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card-flat h-100">
+          <div class="card-head">Application funnel</div>
+          <div class="card-body"><canvas id="funnelChart" height="180"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-flat h-100">
+          <div class="card-head">Placement trend (last 6 months)</div>
+          <div class="card-body"><canvas id="trendChart" height="180"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card-flat h-100">
+          <div class="card-head">Job demand by skills</div>
+          <div class="card-body">
+            <canvas id="skillsChart" height="200"></canvas>
+            <p v-if="!s.skills_demand.length" class="empty mb-0">No skills data yet</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-flat h-100">
+          <div class="card-head">Applications vs selections by company</div>
+          <div class="card-body">
+            <canvas id="companyChart" height="200"></canvas>
+            <p v-if="!s.company_stats.length" class="empty mb-0">No company data yet</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>`

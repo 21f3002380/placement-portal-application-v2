@@ -7,12 +7,10 @@ from backend.config import Config
 from backend.models import (PlacementDrive, Application, Interview, Placement,
                             Student, Company)
 from backend.auth import role_required, login_required
-from backend.cache import cached
+from backend.cache import cached, cache_clear_prefix
 from backend.validators import valid_float, valid_int
 
 bp = Blueprint("student", __name__, url_prefix="/api/student")
-
-# Milestone 6 — role-scoped visibility is already done within these routes files.
 
 
 def file_allowed(filename):
@@ -42,19 +40,24 @@ def _eligible(student, drive):
 @role_required("student")
 def dashboard():
     s = g.current_user.student
+    apps = Application.query.filter_by(student_id=s.id).all()
+    status_distribution = {}
+    for a in apps:
+        status_distribution[a.application_status] = status_distribution.get(a.application_status, 0) + 1
     return jsonify({
         "student": s.to_dict(),
         "companies": [c.to_dict() for c in
                       Company.query.filter_by(is_approved=True, is_blacklisted=False).all()],
         "applications": [a.to_dict() for a in
-                         Application.query.filter_by(student_id=s.id)
-                         .order_by(Application.applied_at.desc()).all()],
+                         sorted(apps, key=lambda a: a.applied_at or 0, reverse=True)],
+        "status_distribution": status_distribution,
     })
 
-# Milestone 6: students may only ever SEE approved, open drives.
-# Pending/Rejected/Closed drives are excluded at the query level
+
 @bp.get("/drives")
 @role_required("student")
+@cached(lambda: "drives:student:" + str(g.current_user.student.id) + ":"
+               + request.args.get("q", "").strip().lower(), timeout=30)
 def drives():
     q = request.args.get("q", "").strip()
     query = PlacementDrive.query.filter_by(approval_status="Approved", drive_status="Open")
@@ -75,7 +78,7 @@ def drives():
         item["eligible"] = ok
         item["ineligible_reason"] = reason
         result.append(item)
-    return jsonify(result)
+    return result
 
 
 @bp.post("/drives/<int:did>/apply")
@@ -88,17 +91,15 @@ def apply(did):
     ok, reason = _eligible(s, d)
     if not ok:
         return jsonify({"error": reason}), 400
-    # Milestone 6: re-check approval status server-side
     if Application.query.filter_by(student_id=s.id, drive_id=did).first():
         return jsonify({"error": "You have already applied for this drive."}), 409
     a = Application(student_id=s.id, drive_id=did)
     db.session.add(a)
     db.session.commit()
+    cache_clear_prefix(f"drives:student:{s.id}:")
     return jsonify({"message": f"Applied for {d.title}.", "application": a.to_dict()}), 201
 
-# --- Milestone 6: Application & placement history -----------------------
-# Returns the student's COMPLETE application history (all statuses, all
-# time) — rows are never deleted, only their application_status changes.
+
 @bp.get("/applications")
 @role_required("student")
 def applications():
@@ -107,7 +108,7 @@ def applications():
         .order_by(Application.applied_at.desc()).all()
     return jsonify([a.to_dict() for a in apps])
 
-# Full interview schedule/history for this student, oldest-scheduled first.
+
 @bp.get("/interviews")
 @role_required("student")
 def interviews():
@@ -116,8 +117,7 @@ def interviews():
         .order_by(Interview.scheduled_at.asc()).all()
     return jsonify([iv.to_dict() for iv in ivs])
 
-# Placement history — created automatically once a company marks an
-# application Selected/Placed (see company_routes.update_application()).
+
 @bp.get("/placements")
 @role_required("student")
 def placements():
@@ -191,7 +191,6 @@ def export_status(task_id):
         return jsonify({"error": str(e)}), 503
 
 
-# Resume download - admin, owning student, or a company the student applied to
 @bp.get("/resume/<int:student_id>")
 @login_required
 def download_resume(student_id):
@@ -215,3 +214,37 @@ def download_resume(student_id):
 def download_export(filename):
     return send_from_directory(Config.EXPORT_FOLDER, secure_filename(filename),
                                as_attachment=True)
+
+
+@bp.get("/placements/<int:placement_id>/offer")
+@login_required
+def download_offer(placement_id):
+    """
+    Download the offer letter / placement confirmation for a Placement.
+    Accessible to: the owning student, admin, or the company that made
+    the placement (same ownership pattern as resume download).
+    """
+    placement = Placement.query.get_or_404(placement_id)
+    user = g.current_user
+    if user.role == "student" and user.student.id != placement.student_id:
+        return jsonify({"error": "Forbidden"}), 403
+    if user.role == "company" and user.company.id != placement.company_id:
+        return jsonify({"error": "Forbidden"}), 403
+    if not placement.offer_filename:
+        return jsonify({"error": "Offer letter not yet generated."}), 404
+    return send_from_directory(Config.OFFER_FOLDER, placement.offer_filename)
+
+
+@bp.get("/companies")
+@role_required("student")
+@cached(lambda: "student:companies:" + request.args.get("q", "").strip().lower(), timeout=60)
+def search_companies():
+    q = request.args.get("q", "").strip()
+    query = Company.query.filter_by(is_approved=True, is_blacklisted=False)
+    if q:
+        query = query.filter(db.or_(
+            Company.company_name.ilike(f"%{q}%"),
+            Company.industry.ilike(f"%{q}%"),
+            Company.location.ilike(f"%{q}%"),
+        ))
+    return [c.to_dict() for c in query.order_by(Company.company_name).all()]
