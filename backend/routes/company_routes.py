@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from flask import Blueprint, request, jsonify, g, send_from_directory
 from sqlalchemy import func
 from backend.extensions import db
@@ -139,10 +140,17 @@ def update_application(aid):
     new_status = data.get("status")
     if new_status not in VALID_STATUSES:
         return jsonify({"error": "Invalid status."}), 400
+    joining_date = None
+    joining_date_raw = (data.get("joining_date") or "").strip()
+    if joining_date_raw:
+        try:
+            joining_date = datetime.strptime(joining_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Please enter a valid joining date."}), 400
     a.application_status = new_status
     a.remark = (data.get("remark") or "").strip()
 
-    new_placement_id = None
+    placement_id_to_regenerate = None
     if new_status in ("Selected", "Placed") and not a.placement:
         placement = Placement(
             application_id=a.id,
@@ -150,15 +158,20 @@ def update_application(aid):
             company_id=a.drive.company_id,
             position=a.drive.job_role,
             salary=a.drive.package,
+            joining_date=joining_date,
         )
         db.session.add(placement)
         db.session.flush()
-        new_placement_id=placement.id
+        placement_id_to_regenerate = placement.id
+    elif a.placement and joining_date:
+        a.placement.joining_date = joining_date
+        placement_id_to_regenerate = a.placement.id
     db.session.commit()
-    if new_placement_id:
+
+    if placement_id_to_regenerate:
         try:
             from backend.jobs.tasks import generate_offer_letter
-            generate_offer_letter.delay(new_placement_id)
+            generate_offer_letter.delay(placement_id_to_regenerate)
         except Exception as e:
             print(f"[offer-letter] could not queue generation: {e}")
 

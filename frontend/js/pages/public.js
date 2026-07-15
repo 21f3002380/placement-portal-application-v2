@@ -13,7 +13,7 @@ Pages.Landing = {
   },
   template: `
   <div>
-    <div style="background:var(--slate);color:#fff">
+    <div style="background:var(--oxblood);color:#fff">
       <div class="container py-5">
         <div class="eyebrow" style="color:#9fb0c2">Institute Placement Cell</div>
         <h1 style="color:#fff;font-size:3rem;max-width:16ch">One console for the whole placement season.</h1>

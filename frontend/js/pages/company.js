@@ -189,7 +189,8 @@ Pages.CompanyViewDrive = {
       catch(e){ Store.toast(e.message, 'err'); }
     }
     async function setStatus(a) {
-      try { const r = await API.post('/api/company/applications/'+a.id+'/status', { status: a.application_status, remark: a.remark||'' });
+      try { const r = await API.post('/api/company/applications/'+a.id+'/status',
+              { status: a.application_status, remark: a.remark||'', joining_date: a.joining_date||'' });
         Store.toast(r.message); load(); } catch(e){ Store.toast(e.message,'err'); }
     }
     async function schedule(a) {
@@ -201,8 +202,14 @@ Pages.CompanyViewDrive = {
         Store.toast(r.message); iv.value[a.id] = {}; load();
       } catch(e){ Store.toast(e.message,'err'); }
     }
+    async function saveFeedback(i) {
+      try {
+        const r = await API.post('/api/company/interviews/'+i.id+'/feedback', { feedback: i.feedback||'' });
+        Store.toast(r.message);
+      } catch(e){ Store.toast(e.message,'err'); }
+    }
     onMounted(load);
-    return { data, iv, setStatus, schedule, id, viewResume};
+    return { data, iv, setStatus, schedule, id, viewResume, saveFeedback};
   },
   template: `
   <div class="container py-4" v-if="data">
@@ -215,7 +222,7 @@ Pages.CompanyViewDrive = {
     <div class="card-flat mb-4">
       <div class="card-head">Applicants ({{ data.applications.length }})</div>
       <table class="table table-flat mb-0">
-        <thead><tr><th>Student</th><th>Dept</th><th>CGPA</th><th>Status</th><th>Resume</th><th style="width:120px">Remark</th><th class="text-end">Save</th></tr></thead>
+        <thead><tr><th>Student</th><th>Dept</th><th>CGPA</th><th>Status</th><th>Joining date</th><th>Resume</th><th style="width:120px">Remark</th><th class="text-end">Save</th></tr></thead>
         <tbody>
           <tr v-for="a in data.applications" :key="a.id">
             <td>{{ a.student_name }}</td><td>{{ a.student_department || '—' }}</td><td>{{ a.student_cgpa ?? '—' }}</td>
@@ -224,11 +231,16 @@ Pages.CompanyViewDrive = {
                 <option>Applied</option><option>Shortlisted</option><option>Interview</option><option>Selected</option><option>Rejected</option><option>Placed</option>
               </select>
             </td>
+            <td>
+              <input v-model="a.joining_date" type="date" class="form-control form-control-sm" style="width:150px"
+                     v-if="a.application_status==='Selected' || a.application_status==='Placed'" />
+              <span v-else class="small text-muted">—</span>
+            </td>
             <td><a class="btn btn-sm btn-outline-secondary"  @click="viewResume(a.student_id)">View</a></td>
             <td><input v-model="a.remark" class="form-control form-control-sm" /></td>
             <td class="text-end"><button class="btn btn-sm btn-ink" @click="setStatus(a)">Save</button></td>
           </tr>
-          <tr v-if="!data.applications.length"><td colspan="7" class="empty">No applicants yet</td></tr>
+          <tr v-if="!data.applications.length"><td colspan="8" class="empty">No applicants yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -257,11 +269,13 @@ Pages.CompanyViewDrive = {
     <div class="card-flat" v-if="data.interviews.length">
       <div class="card-head">Scheduled interviews</div>
       <table class="table table-flat mb-0">
-        <thead><tr><th>Student</th><th>When</th><th>Mode</th><th>Location</th></tr></thead>
+        <thead><tr><th>Student</th><th>When</th><th>Mode</th><th>Location</th><th>Feedback</th></tr></thead>
         <tbody>
           <tr v-for="i in data.interviews" :key="i.id">
             <td>{{ i.student_name }}</td><td>{{ (i.scheduled_at||'').replace('T',' ').slice(0,16) }}</td>
             <td>{{ i.mode }}</td><td>{{ i.location || '—' }}</td>
+            <td><input v-model="i.feedback" class="form-control form-control-sm" placeholder="Add feedback…" style="min-width:180px" /></td>
+            <td class="text-end"><button class="btn btn-sm btn-ink" @click="saveFeedback(i)">Save</button></td>
           </tr>
         </tbody>
       </table>
